@@ -1,28 +1,46 @@
 <template>
   <div id="app">
-    <img alt="Vue logo" src="./assets/logo.png">
-    <HelloWorld msg="Welcome to Your Vue.js App"/>
+    <input type="file" @change="handleFileChange" />
+    <el-button @click="handleUpload">上传</el-button>
   </div>
 </template>
 
 <script>
-import HelloWorld from './components/HelloWorld.vue'
+import createFileChunk from './utils/createFileChunk';
+import { post } from './utils/request';
 
 export default {
   name: 'App',
-  components: {
-    HelloWorld
+  data() {
+    return {
+      file: null,
+    };
+  },
+  methods: {
+    handleFileChange(e) {
+      const [file] = e.target.files;
+      if (!file) return;
+      this.file = file;
+    },
+    handleUpload() {
+      if (!this.file) return;
+      const fileChunkList = createFileChunk(this.file);
+
+      fileChunkList.map(({ chunk, hash }) => {
+        const formData = new FormData();
+
+        formData.append('chunk', chunk);
+        formData.append('hash', hash);
+        formData.append('filename', this.file.name);
+
+        return formData;
+      }).forEach(formData => {
+        post('http://localhost:3000', formData);
+      });
+    }
   }
-}
+};
 </script>
 
 <style>
-#app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  color: #2c3e50;
-  margin-top: 60px;
-}
 </style>
