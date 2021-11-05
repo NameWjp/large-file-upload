@@ -4,6 +4,55 @@ const fse = require('fs-extra');
 
 const UPLOAD_DIR = path.resolve(__dirname, "..", "target");
 
+const getChunkDir = (filename) => {
+  return path.resolve(UPLOAD_DIR, `${filename}-Dir`);
+};
+
+const resolvePost = req => {
+  return new Promise(resolve => {
+    let chunk = "";
+    req.on("data", data => {
+      chunk += data;
+    });
+    req.on("end", () => {
+      resolve(JSON.parse(chunk));
+    });
+  });
+};
+
+const pipeStream = (path, writeStream) => {
+  return new Promise(resolve => {
+    const readStream = fse.createReadStream(path);
+    readStream.on('end', () => {
+      fse.unlinkSync(path);
+      resolve();
+    });
+    readStream.pipe(writeStream);
+  });
+};
+
+const mergeFileChunk = async (filename, size) => {
+  const chunkDir = getChunkDir(filename);
+  const chunkPaths = await fse.readdir(chunkDir);
+  const filePath = path.resolve(UPLOAD_DIR, filename);
+  // 升序排列文件
+  chunkPaths.sort((a, b) => a.split('-')[1] - b.split('-')[1]);
+  // 生成合并文件
+  await Promise.all(
+    chunkPaths.map(async (chunkPath, index) => {
+      await pipeStream(
+        path.resolve(chunkDir, chunkPath),
+        fse.createWriteStream(filePath, {
+          start: index * size,
+          end: (index + 1) * size
+        })
+      );
+    })
+  );
+  // 删除文件夹
+  fse.rmdirSync(chunkDir);
+};
+
 module.exports = class {
   // 处理切片
   async handleFormData(req, res) {
@@ -20,7 +69,7 @@ module.exports = class {
       const filename = fields.filename[0];
       const hash = fields.hash[0];
       const chunk = files.chunk[0];
-      const chunkDir = path.resolve(UPLOAD_DIR, filename);
+      const chunkDir = getChunkDir(filename);
       const filePath = `${chunkDir}/${hash}`;
 
       if (!fse.existsSync(chunkDir)) {
@@ -36,5 +85,12 @@ module.exports = class {
 
       res.end("文件上传成功");
     });
+  }
+
+  async handleMerge(req, res) {
+    const data = await resolvePost(req);
+    const { filename, size } = data;
+    await mergeFileChunk(filename, size);
+    res.end("文件合并成功");
   }
 };

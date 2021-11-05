@@ -8,6 +8,9 @@
 <script>
 import createFileChunk from './utils/createFileChunk';
 import { post } from './utils/request';
+// 定义文件切块大小
+// chrome 保存在内存中最大的尺寸是 10M，超出后无法显示
+const CHUNK_SIZE = 2 * 1024 * 1024;
 
 export default {
   name: 'App',
@@ -22,20 +25,26 @@ export default {
       if (!file) return;
       this.file = file;
     },
-    handleUpload() {
+    async handleUpload() {
       if (!this.file) return;
-      const fileChunkList = createFileChunk(this.file);
+      const fileChunkList = createFileChunk(this.file, CHUNK_SIZE);
 
-      fileChunkList.map(({ chunk, hash }) => {
+      const requestList = fileChunkList.map(async ({ chunk, hash }) => {
         const formData = new FormData();
 
         formData.append('chunk', chunk);
         formData.append('hash', hash);
         formData.append('filename', this.file.name);
 
-        return formData;
-      }).forEach(formData => {
-        post('http://localhost:3000', formData);
+        return await post('http://localhost:3000', formData);
+      });
+
+      await Promise.all(requestList);
+
+      // 发送合并请求
+      await post('http://localhost:3000/merge', {
+        size: CHUNK_SIZE,
+        filename: this.file.name
       });
     }
   }

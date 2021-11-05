@@ -17,6 +17,10 @@ server.on('request', async (req, res) => {
   if (req.url === '/') {
     controller.handleFormData(req, res);
   }
+
+  if (req.url === '/merge') {
+    controller.handleMerge(req, res);
+  }
 });
 
 server.listen(3000, () => console.log("正在监听 3000 端口"));

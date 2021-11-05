@@ -36,6 +36,10 @@ function post(url, data, headers = {}) {
     headers['Content-Type'] = 'application/json;charset=utf-8';
   }
 
+  if (isPlainObject(data)) {
+    data = JSON.stringify(data);
+  }
+
   return request(url, 'post', data, headers);
 }
 
