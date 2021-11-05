@@ -1,6 +1,6 @@
 import { isPlainObject } from './util';
 
-function request(url, method, data, headers = {}) {
+function request(url, method, data, headers = {}, onProgress) {
   return new Promise(resolve => {
     const xhr = new XMLHttpRequest();
 
@@ -10,13 +10,17 @@ function request(url, method, data, headers = {}) {
       xhr.setRequestHeader(name, headers[name]);
     });
 
-    xhr.send(data);
+    if (onProgress && typeof onProgress === 'function') {
+      xhr.upload.onprogress = onProgress;
+    }
 
     xhr.onload = e => {
       resolve({
         data: e.target.response
       });
     };
+
+    xhr.send(data);
   });
 }
 
@@ -29,7 +33,7 @@ function normalizeHeaderName(headers, normalizeName) {
   });
 }
 
-function post(url, data, headers = {}) {
+function post(url, data, headers = {}, onProgress) {
   normalizeHeaderName(headers, 'Content-Type');
 
   if (headers && !headers['Content-Type'] && isPlainObject(data)) {
@@ -40,7 +44,7 @@ function post(url, data, headers = {}) {
     data = JSON.stringify(data);
   }
 
-  return request(url, 'post', data, headers);
+  return request(url, 'post', data, headers, onProgress);
 }
 
 export {

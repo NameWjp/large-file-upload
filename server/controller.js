@@ -39,15 +39,15 @@ const mergeFileChunk = async (filename, size) => {
   chunkPaths.sort((a, b) => a.split('-')[1] - b.split('-')[1]);
   // 生成合并文件
   await Promise.all(
-    chunkPaths.map(async (chunkPath, index) => {
-      await pipeStream(
+    chunkPaths.map((chunkPath, index) =>
+      pipeStream(
         path.resolve(chunkDir, chunkPath),
         fse.createWriteStream(filePath, {
           start: index * size,
           end: (index + 1) * size
         })
-      );
-    })
+      )
+    )
   );
   // 删除文件夹
   fse.rmdirSync(chunkDir);
