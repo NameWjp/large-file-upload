@@ -1,7 +1,16 @@
 <template>
   <div id="app">
-    <input type="file" @change="handleFileChange" />
-    <el-button @click="handleUpload">上传</el-button>
+    <div class="top">
+      <input type="file" @change="handleFileChange" />
+      <el-button @click="handleUpload">上传</el-button>
+      <el-button type="danger" @click="handleClear">清空</el-button>
+    </div>
+    <div>
+      <div>计算文件 hash</div>
+      <el-progress :percentage="hashPercentage"></el-progress>
+      <div>总进度</div>
+      <el-progress :percentage="uploadPercentage"></el-progress>
+    </div>
     <el-table :data="chunkList">
       <el-table-column
         prop="hash"
@@ -36,9 +45,23 @@ export default {
   name: 'App',
   data() {
     return {
-      file: null,
+      container: {
+        file: null,
+        hash: null,
+        worker: null,
+      },
+      hashPercentage: 0,
       chunkList: [],
     };
+  },
+  computed: {
+    uploadPercentage() {
+      if (!this.container.file || !this.chunkList.length) return 0;
+      const loaded = this.chunkList
+        .map(chunk => chunk.size * (chunk.percentage / 100))
+        .reduce((total, cur) => total + cur, 0);
+      return parseInt((loaded / this.container.file.size) * 100);
+    }
   },
   filters: {
     transformByte(val) {
@@ -49,30 +72,48 @@ export default {
     handleFileChange(e) {
       const [file] = e.target.files;
       if (!file) return;
-      this.file = file;
+      this.container.file = file;
     },
     createProgressHandle(item) {
       return e => {
         item.percentage = parseInt((e.loaded / e.total) * 100);
       };
     },
+    // 通过 web-worker 计算 hash
+    calculateHash(fileChunkList) {
+      return new Promise(resolve => {
+        this.container.worker = new Worker("/hash.js");
+        this.container.worker.postMessage({ fileChunkList });
+        this.container.worker.onmessage = e => {
+          const { percentage, hash } = e.data;
+          this.hashPercentage = percentage;
+          if (hash) {
+            resolve(hash);
+          }
+        };
+      });
+    },
     async handleUpload() {
-      if (!this.file) return;
-      const fileChunkList = createFileChunk(this.file, CHUNK_SIZE);
+      if (!this.container.file) return;
 
-      this.chunkList = fileChunkList.map(({ chunk, hash }, index) => ({
-        hash,
+      const fileChunkList = createFileChunk(this.container.file, CHUNK_SIZE);
+      const fileHash = await this.calculateHash(fileChunkList);
+
+      this.chunkList = fileChunkList.map(({ chunk, index }) => ({
+        hash: `${fileHash}-${index}`,
         index,
         size: chunk.size,
         percentage: 0,
+        chunk,
       }));
+      this.container.hash = fileHash;
 
-      const requestList = fileChunkList.map(async ({ chunk, hash }, index) => {
+      const requestList = this.chunkList.map(async ({ chunk, hash, index }) => {
         const formData = new FormData();
 
         formData.append('chunk', chunk);
         formData.append('hash', hash);
-        formData.append('filename', this.file.name);
+        formData.append('fileHash', this.container.hash);
 
         return await post(
           'http://localhost:3000',
@@ -87,12 +128,23 @@ export default {
       // 发送合并请求
       await post('http://localhost:3000/merge', {
         size: CHUNK_SIZE,
-        filename: this.file.name
+        filename: this.container.file.name,
+        fileHash: this.container.hash,
       });
+    },
+    handleClear() {
+      post('http://localhost:3000/clear');
     }
   }
 };
 </script>
 
 <style>
+#app {
+  padding: 20px;
+}
+.top {
+  text-align: center;
+  margin: 20px 0;
+}
 </style>

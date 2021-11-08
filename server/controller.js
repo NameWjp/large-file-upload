@@ -4,10 +4,6 @@ const fse = require('fs-extra');
 
 const UPLOAD_DIR = path.resolve(__dirname, "..", "target");
 
-const getChunkDir = (filename) => {
-  return path.resolve(UPLOAD_DIR, `${filename}-Dir`);
-};
-
 const resolvePost = req => {
   return new Promise(resolve => {
     let chunk = "";
@@ -30,8 +26,8 @@ const pipeStream = (path, writeStream) => {
   });
 };
 
-const mergeFileChunk = async (filename, size) => {
-  const chunkDir = getChunkDir(filename);
+const mergeFileChunk = async (filename, fileHash, size) => {
+  const chunkDir = path.resolve(UPLOAD_DIR, fileHash);
   const chunkPaths = await fse.readdir(chunkDir);
   const filePath = path.resolve(UPLOAD_DIR, filename);
   // 升序排列文件
@@ -67,10 +63,10 @@ module.exports = class {
         return;
       }
 
-      const filename = fields.filename[0];
+      const fileHash = fields.fileHash[0];
       const hash = fields.hash[0];
       const chunk = files.chunk[0];
-      const chunkDir = getChunkDir(filename);
+      const chunkDir = path.resolve(UPLOAD_DIR, fileHash);
       const filePath = `${chunkDir}/${hash}`;
 
       if (!fse.existsSync(chunkDir)) {
@@ -90,8 +86,13 @@ module.exports = class {
 
   async handleMerge(req, res) {
     const data = await resolvePost(req);
-    const { filename, size } = data;
-    await mergeFileChunk(filename, size);
+    const { filename, fileHash, size } = data;
+    await mergeFileChunk(filename, fileHash, size);
     res.end("文件合并成功");
+  }
+
+  async handleClear(req, res) {
+    fse.emptyDirSync(UPLOAD_DIR);
+    res.end("清除成功");
   }
 };

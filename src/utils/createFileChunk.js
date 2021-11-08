@@ -7,7 +7,7 @@ export default function createFileChunk(file, size) {
     // File 接口基于 Blob 接口，利于 Blob 接口的 slice 方法实现切片
     fileChunkList.push({
       chunk: file.slice(cur, cur + size),
-      hash: file.name + '-' + index,
+      index,
     });
 
     cur += size;
