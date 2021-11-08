@@ -24,7 +24,6 @@ const pipeStream = (path, writeStream) => {
   return new Promise(resolve => {
     const readStream = fse.createReadStream(path);
     readStream.on('end', () => {
-      fse.unlinkSync(path);
       resolve();
     });
     readStream.pipe(writeStream);
@@ -39,15 +38,17 @@ const mergeFileChunk = async (filename, size) => {
   chunkPaths.sort((a, b) => a.split('-')[1] - b.split('-')[1]);
   // 生成合并文件
   await Promise.all(
-    chunkPaths.map((chunkPath, index) =>
-      pipeStream(
-        path.resolve(chunkDir, chunkPath),
-        fse.createWriteStream(filePath, {
-          start: index * size,
-          end: (index + 1) * size
-        })
-      )
-    )
+    chunkPaths.map(async (chunkPath, index) => {
+      const readPath = path.resolve(chunkDir, chunkPath);
+      const writeStream = fse.createWriteStream(filePath, {
+        start: index * size,
+        end: (index + 1) * size
+      });
+
+      await pipeStream(readPath, writeStream);
+      // 传输完成删除文件
+      fse.unlinkSync(readPath);
+    })
   );
   // 删除文件夹
   fse.rmdirSync(chunkDir);
