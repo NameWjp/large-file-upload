@@ -1,8 +1,29 @@
 <template>
   <div id="app">
     <div class="top">
-      <input type="file" @change="handleFileChange" />
-      <el-button @click="handleUpload">上传</el-button>
+      <input
+        :disabled="status !== Status.wait"
+        type="file"
+        @change="handleFileChange"
+      />
+      <el-button
+        @click="handleUpload"
+        :loading="status === Status.uploading"
+      >
+        上传
+      </el-button>
+      <el-button
+        @click="handlePause"
+        v-if="status === Status.uploading"
+      >
+        暂停
+      </el-button>
+      <el-button
+        @click="handleResume"
+        v-if="status === Status.pause"
+      >
+        恢复
+      </el-button>
       <el-button type="danger" @click="handleClear">清空</el-button>
     </div>
     <div>
@@ -41,10 +62,18 @@ import { post } from './utils/request';
 // chrome 保存在内存中最大的尺寸是 10M，超出后无法显示
 const CHUNK_SIZE = 2 * 1024 * 1024;
 
+// 上传状态
+const Status = {
+  wait: 'wait',
+  pause: 'pause',
+  uploading: 'uploading',
+};
+
 export default {
   name: 'App',
   data() {
     return {
+      Status,
       container: {
         file: null,
         hash: null,
@@ -52,6 +81,8 @@ export default {
       },
       hashPercentage: 0,
       chunkList: [],
+      requestList: [],
+      status: Status.wait,
     };
   },
   computed: {
@@ -82,7 +113,7 @@ export default {
     // 通过 web-worker 计算 hash
     calculateHash(fileChunkList) {
       return new Promise(resolve => {
-        this.container.worker = new Worker("/hash.js");
+        this.container.worker = new Worker('/hash.js');
         this.container.worker.postMessage({ fileChunkList });
         this.container.worker.onmessage = e => {
           const { percentage, hash } = e.data;
@@ -96,8 +127,21 @@ export default {
     async handleUpload() {
       if (!this.container.file) return;
 
+      this.status = Status.uploading;
+
       const fileChunkList = createFileChunk(this.container.file, CHUNK_SIZE);
       const fileHash = await this.calculateHash(fileChunkList);
+
+      const { shouldUpload, uploadedList } = await post('http://localhost:3000/verify', {
+        filename: this.container.file.name,
+        fileHash,
+      });
+
+      if (!shouldUpload) {
+        this.$message.success('文件已经上传成功');
+        this.status = Status.pause;
+        return;
+      }
 
       this.chunkList = fileChunkList.map(({ chunk, index }) => ({
         hash: `${fileHash}-${index}`,
@@ -108,32 +152,60 @@ export default {
       }));
       this.container.hash = fileHash;
 
-      const requestList = this.chunkList.map(async ({ chunk, hash, index }) => {
-        const formData = new FormData();
-
-        formData.append('chunk', chunk);
-        formData.append('hash', hash);
-        formData.append('fileHash', this.container.hash);
-
-        return await post(
-          'http://localhost:3000',
-          formData,
-          {},
-          this.createProgressHandle(this.chunkList[index])
-        );
-      });
-
-      await Promise.all(requestList);
-
-      // 发送合并请求
-      await post('http://localhost:3000/merge', {
-        size: CHUNK_SIZE,
+      this.uploadChunks(uploadedList);
+    },
+    async handleResume() {
+      this.status = Status.uploading;
+      const { uploadedList } = await post('http://localhost:3000/verify', {
         filename: this.container.file.name,
         fileHash: this.container.hash,
       });
+
+      this.uploadChunks(uploadedList);
     },
-    handleClear() {
-      post('http://localhost:3000/clear');
+    async uploadChunks(uploadedList = []) {
+      const requestList = this.chunkList
+        // 过滤已经上传过的切片
+        .filter(({ hash }) => !uploadedList.includes(hash))
+        .map(async ({ chunk, hash, index }) => {
+          const formData = new FormData();
+
+          formData.append('chunk', chunk);
+          formData.append('hash', hash);
+          formData.append('fileHash', this.container.hash);
+
+          return await post(
+            'http://localhost:3000',
+            formData,
+            {},
+            this.createProgressHandle(this.chunkList[index]),
+            this.requestList,
+          );
+        });
+
+      await Promise.all(requestList);
+
+      // 已上传的切片 + 本次上传的切片 = 所有切片时
+      if (uploadedList.length + requestList.length === this.chunkList.length) {
+        // 发送合并请求
+        await post('http://localhost:3000/merge', {
+          size: CHUNK_SIZE,
+          filename: this.container.file.name,
+          fileHash: this.container.hash,
+        });
+        this.$message.success('上传成功');
+        this.status = Status.wait;
+      }
+    },
+    async handleClear() {
+      await post('http://localhost:3000/clear');
+      this.$message.success('清空成功');
+    },
+    // 这里的暂停实际上是取消正在上传的切片，恢复的时候需要重新上传这些切片，会出现进度条后退的情况
+    handlePause() {
+      this.status = Status.pause;
+      this.requestList.forEach(xhr => xhr?.abort());
+      this.requestList = [];
     }
   }
 };
