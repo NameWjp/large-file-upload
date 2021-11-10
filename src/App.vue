@@ -200,16 +200,12 @@ export default {
     },
     async handleClear() {
       await post('http://localhost:3000/clear');
-      this.container = {
-        file: null,
-        hash: null,
-        worker: null,
-      };
+      this.container.hash = null;
+      this.container.worker = null;
       this.hashPercentage = 0;
       this.chunkList = [];
       this.requestList = [];
       this.status = Status.wait;
-      this.$refs.input.value = null;
       this.$message.success('清空成功');
     },
     // 这里的暂停实际上是取消正在上传的切片，恢复的时候需要重新上传这些切片，会出现进度条后退的情况
