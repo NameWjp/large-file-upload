@@ -22,30 +22,25 @@ const pipeStream = (path, writeStream) => {
     readStream.on('end', () => {
       resolve();
     });
-    readStream.pipe(writeStream);
+    readStream.pipe(writeStream, { end: false });
   });
 };
 
-const mergeFileChunk = async (filename, fileHash, size) => {
+const mergeFileChunk = async (filename, fileHash) => {
   const chunkDir = path.resolve(UPLOAD_DIR, fileHash);
   const chunkPaths = await fse.readdir(chunkDir);
   const filePath = path.resolve(UPLOAD_DIR, filename);
   // 升序排列文件
   chunkPaths.sort((a, b) => a.split('-')[1] - b.split('-')[1]);
   // 生成合并文件
-  await Promise.all(
-    chunkPaths.map(async (chunkPath, index) => {
-      const readPath = path.resolve(chunkDir, chunkPath);
-      const writeStream = fse.createWriteStream(filePath, {
-        start: index * size,
-        end: (index + 1) * size
-      });
-
-      await pipeStream(readPath, writeStream);
-      // 传输完成删除文件
-      fse.unlinkSync(readPath);
-    })
-  );
+  const writeStream = fse.createWriteStream(filePath);
+  for (let i = 0; i < chunkPaths.length; i++) {
+    const readPath = path.resolve(chunkDir, chunkPaths[i]);
+    await pipeStream(readPath, writeStream);
+    // 传输完成删除文件
+    fse.unlinkSync(readPath);
+  }
+  writeStream.close();
   // 删除文件夹
   fse.rmdirSync(chunkDir);
 };
@@ -92,8 +87,8 @@ module.exports = class {
 
   async handleMerge(req, res) {
     const data = await resolvePost(req);
-    const { filename, fileHash, size } = data;
-    await mergeFileChunk(filename, fileHash, size);
+    const { filename, fileHash } = data;
+    await mergeFileChunk(filename, fileHash);
     res.end('文件合并成功');
   }
 

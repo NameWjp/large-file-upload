@@ -190,7 +190,6 @@ export default {
       if (uploadedList.length + requestList.length === this.chunkList.length) {
         // 发送合并请求
         await post('http://localhost:3000/merge', {
-          size: CHUNK_SIZE,
           filename: this.container.file.name,
           fileHash: this.container.hash,
         });
