@@ -115,7 +115,6 @@ export default {
     calculateHash(fileChunkList) {
       return new Promise(resolve => {
         this.container.worker = new Worker('/hash.js');
-        this.container.worker.postMessage({ fileChunkList });
         this.container.worker.onmessage = e => {
           const { percentage, hash } = e.data;
           this.hashPercentage = percentage;
@@ -123,6 +122,7 @@ export default {
             resolve(hash);
           }
         };
+        this.container.worker.postMessage({ fileChunkList });
       });
     },
     async handleUpload() {
